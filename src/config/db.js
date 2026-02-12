@@ -56,6 +56,8 @@ if (!cached) {
   };
 }
 
+export const peopleConn = mongoose.connection; // Export connection for backward compatibility
+
 const connectDB = async () => {
   if (cached.conn) {
     return cached.conn;
@@ -66,9 +68,12 @@ const connectDB = async () => {
   }
 
   if (!cached.promise) {
+    // Note: options like bufferCommands and serverSelectionTimeoutMS are good
     cached.promise = mongoose.connect(process.env.PEOPLE_DB_URI, {
-      serverSelectionTimeoutMS: 30000, // 30s
+      serverSelectionTimeoutMS: 30000,
       bufferCommands: false,
+    }).then((mongoose) => {
+      return mongoose;
     });
   }
 

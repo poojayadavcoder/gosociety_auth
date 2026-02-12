@@ -2,6 +2,8 @@ import Staff from "../models/Staff.js";
 import Society from "../models/Society.js";
 import { generateAccessToken, generateRefreshToken } from "../config/jwt.js";
 import { sendSMS } from "../utils/sms.js";
+import redisClient from "../config/redis.js";
+
 
 /**
  * POST /staff/send-otp
@@ -91,6 +93,19 @@ export const loginStaff = async (req, res) => {
     // Fetch society name
     const society = await Society.findById(staff.societyId);
 
+    // Cache staff session in Redis (TTL: 1 hour)
+    const sessionData = {
+      id: staff._id,
+      societyId: staff.societyId,
+      mobile: staff.mobile,
+      displayName: staff.displayName,
+      email: staff.email,
+      role: staff.role,
+      preferences: staff.preferences,
+      type: "staff"
+    };
+    await redisClient.set(`user:${staff._id}`, JSON.stringify(sessionData), "EX", 3600);
+
     // Return response matching the structure expected by frontend
     res.json({
       accessToken,
@@ -107,6 +122,7 @@ export const loginStaff = async (req, res) => {
         type: "staff"
       }
     });
+
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -302,11 +318,11 @@ export const registerNotificationToken = async (req, res) => {
       return res.status(400).json({ message: "Token is required" });
     }
 
-    // req.user is populated by authMiddleware
-    const staff = req.user;
+    // Use findByIdAndUpdate because req.user might be a plain object from Redis
+    await Staff.findByIdAndUpdate(req.user.id || req.user._id, { notificationToken: token });
     
-    staff.notificationToken = token;
-    await staff.save();
+    // Invalidate Redis cache
+    await redisClient.del(`user:${req.user.id || req.user._id}`);
 
     res.json({ message: "Staff notification token registered successfully" });
   } catch (err) {

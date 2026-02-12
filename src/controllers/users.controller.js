@@ -5,6 +5,8 @@ import Admin from "../models/Admin.js";
 import bcrypt from "bcryptjs";
 import { generateAccessToken, generateRefreshToken } from "../config/jwt.js";
 import { sendSMS } from "../utils/sms.js";
+import redisClient from "../config/redis.js";
+
 
 
 /**
@@ -169,6 +171,20 @@ export const loginUser = async (req, res) => {
     // Fetch society name
     const society = await Society.findById(user.societyId);
 
+    // Cache user session in Redis (TTL: 1 hour)
+    const sessionData = {
+      id: user._id,
+      societyId: user.societyId,
+      mobile: user.mobile,
+      displayName: user.displayName,
+      email: user.email,
+      profile: user.profile,
+      role: user.role,
+      preferences: user.preferences,
+      type: "user"
+    };
+    await redisClient.set(`user:${user._id}`, JSON.stringify(sessionData), "EX", 3600);
+
     res.json({
       accessToken,
       refreshToken,
@@ -183,6 +199,7 @@ export const loginUser = async (req, res) => {
         type: "user"
       }
     });
+
 
 
   } catch (err) {
@@ -581,11 +598,11 @@ export const registerNotificationToken = async (req, res) => {
       return res.status(400).json({ message: "Token is required" });
     }
 
-    // req.user is already populated by authMiddleware for all roles (admin, user, staff)
-    const user = req.user;
+    // Use findByIdAndUpdate because req.user might be a plain object from Redis
+    await User.findByIdAndUpdate(req.user.id || req.user._id, { notificationToken: token });
     
-    user.notificationToken = token;
-    await user.save();
+    // Invalidate Redis cache to ensure consistency
+    await redisClient.del(`user:${req.user.id || req.user._id}`);
 
     res.json({ message: "Notification token registered successfully" });
   } catch (err) {

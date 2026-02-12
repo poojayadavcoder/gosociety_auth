@@ -1,4 +1,6 @@
 import Admin from "../models/Admin.js";
+import User from "../models/User.js";
+import Staff from "../models/Staff.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { generateAccessToken, generateRefreshToken } from "../config/jwt.js";
@@ -154,11 +156,29 @@ export const refreshToken = async (req, res) => {
  * POST /auth/logout
  */
 export const logout = async (req, res) => {
-  if (req.user) {
-    req.user.refreshToken = null;
-    await req.user.save();
-    // Remove session from Redis
-    await redisClient.del(`user:${req.user._id}`);
+  try {
+    if (req.user) {
+      const userId = req.user.id || req.user._id;
+      const userType = req.userType; // Set by authMiddleware
+
+      console.log(`[Logout] User: ${userId} | type: ${userType}`);
+
+      let Model;
+      if (userType === "admin") Model = Admin;
+      else if (userType === "staff") Model = Staff;
+      else Model = User;
+
+      await Model.findByIdAndUpdate(userId, { 
+        refreshToken: null,
+        notificationToken: null 
+      });
+
+      // Remove session from Redis
+      await redisClient.del(`user:${userId}`);
+    }
+    res.json({ message: "Logged out successfully" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ error: error.message });
   }
-  res.json({ message: "Logged out successfully" });
 };

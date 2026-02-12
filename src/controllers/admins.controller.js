@@ -188,11 +188,11 @@ export const registerNotificationToken = async (req, res) => {
       return res.status(400).json({ message: "Token is required" });
     }
 
-    // req.user is populated by authMiddleware
-    const admin = req.user;
+    // Use findByIdAndUpdate because req.user might be a plain object from Redis
+    await Admin.findByIdAndUpdate(req.user.id || req.user._id, { notificationToken: token });
     
-    admin.notificationToken = token;
-    await admin.save();
+    // Invalidate Redis cache
+    await redisClient.del(`user:${req.user.id || req.user._id}`);
 
     res.json({ message: "Admin notification token registered successfully" });
   } catch (err) {
